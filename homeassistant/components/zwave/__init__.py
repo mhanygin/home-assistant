@@ -11,29 +11,33 @@ from pprint import pprint
 
 import voluptuous as vol
 
+import homeassistant.helpers.config_validation as cv
+import homeassistant.util.dt as dt_util
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    EVENT_HOMEASSISTANT_START,
+    EVENT_HOMEASSISTANT_STOP
+)
 from homeassistant.core import CoreState
-from homeassistant.loader import get_platform
 from homeassistant.helpers import discovery
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send
+)
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_component import EntityComponent
-from homeassistant.const import (
-    ATTR_ENTITY_ID, EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP)
 from homeassistant.helpers.entity_values import EntityValues
 from homeassistant.helpers.event import track_time_change
+from homeassistant.loader import get_platform
 from homeassistant.util import convert
-import homeassistant.util.dt as dt_util
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.dispatcher import (
-    async_dispatcher_connect, async_dispatcher_send)
-
 from . import const
-from .const import DOMAIN, DATA_DEVICES, DATA_NETWORK, DATA_ENTITY_VALUES
-from .node_entity import ZWaveBaseEntity, ZWaveNodeEntity
 from . import workaround
+from .const import DOMAIN, DATA_DEVICES, DATA_NETWORK, DATA_ENTITY_VALUES
 from .discovery_schemas import DISCOVERY_SCHEMAS
+from .node_entity import ZWaveBaseEntity, ZWaveNodeEntity
 from .util import check_node_schema, check_value_schema, node_name
 
-REQUIREMENTS = ['pydispatcher==2.0.5', 'python_openzwave==0.4.3']
+REQUIREMENTS = ['pydispatcher==2.0.5', 'python_openzwave==0.4.4']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +60,7 @@ CONF_NETWORK_KEY = 'network_key'
 ATTR_POWER = 'power_consumption'
 
 DEFAULT_CONF_AUTOHEAL = True
-DEFAULT_CONF_USB_STICK_PATH = '/zwaveusbstick'
+DEFAULT_CONF_USB_STICK_PATH = '/dev/ttyAMA0'
 DEFAULT_POLLING_INTERVAL = 60000
 DEFAULT_DEBUG = False
 DEFAULT_CONF_IGNORED = False
@@ -190,16 +194,18 @@ def nice_print_node(node):
 
 def get_config_value(node, value_index, tries=5):
     """Return the current configuration value for a specific index."""
-    try:
-        for value in node.values.values():
-            if (value.command_class == const.COMMAND_CLASS_CONFIGURATION
-                    and value.index == value_index):
-                return value.data
-    except RuntimeError:
-        # If we get a runtime error the dict has changed while
-        # we was looking for a value, just do it again
-        return None if tries <= 0 else get_config_value(
-            node, value_index, tries=tries - 1)
+    for _ in range(tries):
+        try:
+            for value in node.values.values():
+                if (value.command_class == const.COMMAND_CLASS_CONFIGURATION
+                        and value.index == value_index):
+                    return value.data
+        except RuntimeError:
+            pass
+            # If we get a runtime error the dict has changed while
+            # # we was looking for a value, just do it again
+            # return None if tries <= 0 else get_config_value(
+            #     node, value_index, tries=tries - 1)
     return None
 
 
